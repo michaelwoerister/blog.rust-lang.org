@@ -239,12 +239,21 @@ any value we have cached for `Y` cannot be relied on any more.
 Dependency Tracking in the Compiler
 ===================================
 When compiling in incremental mode, we always build the dependency graph of the
-produced data: Every time, some piece of data is written (like an object file),
-we record which other pieces of data we are accessing while doing so. This is
-mostly done by putting data behind a layer of abstraction (most prominently the
-so-called `DepTrackingMap`) that will add dependency edges transparently behind
-the scenes. At the end of the compilation sessions we have all our data nicely
-linked up:
+produced data: every time, some piece of data is written (like an object file),
+we record which other pieces of data we are accessing while doing so.
+
+The emphasis is on **recording** here. At any point in time the compiler keeps
+track of which piece of data it is currently working on (it does so in the
+background in thread-local memory). This is the currently **active node** of the
+dependency graph. Conversely, the data that needs to be **read** to compute
+the value of the active node is also tracked: it usually already resides in some
+kind container (e.g. a hash table) that requires invoking a lookup method to
+access a specific entry. We make good use of this fact by making these **lookup
+methods transparently create edges** in the dependency graph: whenever an entry
+is accessed, we know that it is being read and we know what it is being read
+*for* (the currently active node). This gives us both ends of the dependency edge
+and we can simply add it to the graph. At the end of the compilation sessions we
+have all our data nicely linked up, mostly automatically:
 
 <!--
          AST        type info      object
@@ -264,7 +273,7 @@ directory along with the cache entries it describes.
 
 At the beginning of a subsequent compilation session, we detect which inputs
 (=AST nodes) have changed by comparing them to the previous version. Given the
-graph and the set of changed input, we can easily find all cache entries that
+graph and the set of changed inputs, we can easily find all cache entries that
 are not up-to-date anymore and just remove them from the cache:
 
 <!--
@@ -281,6 +290,23 @@ are not up-to-date anymore and just remove them from the cache:
 
 Anything that has survived this cache validation phase can safely be re-used
 during the current compilation session.
+
+There are a few benefits to the **automated dependency tracking** approach we
+are employing. Since it is built into the compiler's internal APIs, it will
+stay up-to-date with changes to the compiler, and it is hard to accidentally
+forget about. And if one still forgets using it correctly (e.g. by not declaring
+the correct *active node* in some place) then the result is an overly
+**conservative, but still "correct"** dependency graph: It will negatively
+impact the re-use ratio but it will not lead to incorrectly re-using some
+outdated piece of data.
+
+Another aspect is that the system does not try to predict or compute what the
+dependency graph is going to look like, it just keeps track. A large part of
+our (yet to be written) **regression tests**, on the other hand, *will* give a
+description of what the dependency graph for a given program ought to look like.
+This makes sure that the actual graph and the reference graph are arrived at
+via **different methods**, reducing the risk that both the compiler and the
+test case agree on the same, yet wrong, value.
 
 
 "Faster! Up to 15% or More."[*][up-to-or-more]
