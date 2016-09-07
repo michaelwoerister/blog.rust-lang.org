@@ -324,7 +324,7 @@ much time is spent in each one on average:
 
 TIME:    5%            20%         **65%**       10%
 -->
-![Relative Cost of Compilation Phases][compiler-phases-timing]{:class="center"}
+![Relative Cost of Compilation Phases][compiler-phases-cost]{:class="center"}
 
 As you can see, the Rust compiler spends most of its time in the optimization
 and codegen passes. Consequently, if this phase can be skipped at least for
@@ -414,5 +414,5 @@ done.
 [compiler-phases]: /images/2016-08-Incremental/compiler-phases.svg
 [compiler-dep-graph]: /images/2016-08-Incremental/compiler-dep-graph.svg
 [compiler-cache-purge]: /images/2016-08-Incremental/compiler-cache-purge.svg
-[compiler-phases-timing]: /images/2016-08-Incremental/compiler-phases-timing.svg
+[compiler-phases-cost]: /images/2016-08-Incremental/compiler-phases-cost.svg
 [cargo-incremental]: https://github.com/nikomatsakis/cargo-incremental
