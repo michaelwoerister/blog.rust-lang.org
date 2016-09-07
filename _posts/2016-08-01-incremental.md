@@ -21,13 +21,32 @@ help **improve compile times** a lot for some specific but very common workflows
 is **incremental compilation**. This new feature, once it is fully implemented,
 will allow you to iterate on your code much more quickly.
 
-Today we are announcing an alpha version of incremental compilation, available
-in the nightly version of the compiler. It is still far from finished, with lots
-of room for improvement regarding its efficiency, but it is a working proof of
-concept for our [basic implementation strategy][incr-comp-rfc] and it is showing
-a lot of promise. This blog post will go through why incremental compilation is
-useful, how our implementation of it works, what its current development status
-is, and finally what's planned for the future and how you can contribute,
+Today we are announcing an **alpha version** of incremental compilation, which
+marks an important milestone in the development of the feature: For the first
+time since implementation started towards the end of last year, all of the
+[basic components][incr-comp-rfc] are in place, the bulk of the groundwork has
+been done. You can give it a try in the nightly version of the compiler:
+
+```
+rustc -Zincremental=<path> ./main.rs
+```
+
+This will start the compiler in **incremental mode**, using whatever `<path>`
+you've provided as the incremental compilation cache directory.
+
+With all that being said, incremental compilation is **not production-ready** yet:
+You might see crashes, you might see cases where there is no actual reduction
+in compile times and, most importantly, we still have to write extensive
+regression tests that make sure that incrementally compiled programs are
+always correct — so don't use it anywhere yet where it really matters. Over
+the next few weeks and months, however, our focus will be on making the
+implementation rock-solid from a correctness point of view and you will see
+continuous, gradual improvements in the feature's efficiency, up to a point
+where it will be transformative to your development experience.
+
+This blog post will go through why and when incremental compilation is useful
+to begin with, how our implementation of it works, what its current development
+status is, and finally what's planned for the future and how you can contribute,
 should you be so inclined.
 
 
