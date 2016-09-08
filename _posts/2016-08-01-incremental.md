@@ -371,26 +371,51 @@ methods of that `impl` as changed if just one of them is changed. This of course
 will mean that more code will be re-compiled than is strictly necessary. The
 current implementation is still a proof of concept more than anything else.
 
+
 Performance Numbers
 ===================
+Here are some numbers of how the current implementation fares in various
+situations. First let's take a look at the best case scenario where a 100%
+of a crate's object files can be re-used. This might occur when changing one
+crate in a multi-crate project and downstream crates need to be rebuilt but
+are not really affected.
 
-> TODO
->
-> * Here are some numbers for different crates:
->  - Graph with perfect re-use for syntex, some crate with little code but lots
->    of monomorphizations (rustc_driver), some crate with little to optimize
->
->    => Interpretation: IC-alpha shines where there's lots of optimization
->
->  - Graph with regular compilation vs initial compile with IC
->
->    => Interpretation: initial compilation slightly slower b/c of dependency
->                       tracking. Should not make much of a difference
->
->  - Graph with changing different functions in syntex
->
->    => Interpretation: illustrates input sensitivity
->
+![Normalized Incremental Compilation Build Times][performance-full-re-use]{:class="center"}
+
+As you can see, compiling a crate for the first time in incremental mode can be
+slower than compiling it in non-incremental mode. This is because the dependency
+tracking incurs some additional cost when activated. Note that compiling
+incrementally can also be faster (as in the case of the [regex][regex] crate). This is
+because incremental compilation splits the code into smaller optimization units
+than a regular compilation session, resulting in less time optimizing, but
+also in less efficient runtime code.
+
+The last column shows the amount of time a rebuild of the crate takes when
+nothing has actually changed. For crates where the compiler spends a lot of
+time optimizing, like [syntex-syntax][syntex] or `regex`, the gain can
+be substantial: The incremental rebuild only takes about 22% of the time a
+full rebuild would need for `syntex-syntax`, only 16% for `regex`, and less than
+10% for the [all.rs test case][futures-all] of the [futures-rs][futures] crate.
+
+On the other hand, for a crate like the `futures-rs` library that results in
+little machine code when being compiled, the current version of incremental
+compilation makes little difference: It's only 3% faster than compiling from
+scratch.
+
+The next graph shows which impact various changes made to the `regex` crate
+have on incremental rebuild times:
+
+![Build Times After Specific Changes][performance-changes]{:class="center"}
+
+As you can see, the effectiveness of incremental compilation indeed depends a
+lot on the type of change applied to the code. For changes with very local
+effect we can get close to optimal re-use (as in the case of `Error::cause()`,
+or `dfa::write_vari32()`). If we change something that has an impact on many
+places, like `Compiler::new()`, we might not see a noticeable reduction in
+compile times. But again, be aware that these measurements are from the
+current implementation of incremental compilation. They do not reflect the
+full potential of the feature.
+
 
 Future Plans
 ============
@@ -442,3 +467,9 @@ done.
 [compiler-cache-purge]: /images/2016-08-Incremental/compiler-cache-purge.svg
 [compiler-phases-cost]: /images/2016-08-Incremental/compiler-phases-cost.svg
 [cargo-incremental]: https://github.com/nikomatsakis/cargo-incremental
+[performance-full-re-use]: /images/2016-08-Incremental/perf-full-re-use.svg
+[performance-changes]: /images/2016-08-Incremental/perf-changes.svg
+[regex]: https://github.com/rust-lang-nursery/regex
+[futures]: https://github.com/alexcrichton/futures-rs
+[syntex]: https://github.com/serde-rs/syntex/tree/master/syntex_syntax
+[futures-all]: https://github.com/alexcrichton/futures-rs/blob/master/tests/all.rs
