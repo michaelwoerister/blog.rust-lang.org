@@ -14,8 +14,8 @@
    inkscape:version="0.91 r13725"
    xml:space="preserve"
    width="28.127325cm"
-   height="9.1972704cm"
-   viewBox="0 0 996.63749 325.88753"
+   height="7.1972704cm"
+   viewBox="0 0 996.63749 255.02139"
    sodipodi:docname="perf-changes.svg"><metadata
      id="metadata8"><rdf:RDF><cc:Work
          rdf:about=""><dc:format>image/svg+xml</dc:format><dc:type
@@ -214,13 +214,13 @@
      id="namedview4"
      showgrid="false"
      units="cm"
-     fit-margin-top="1"
+     fit-margin-top="0"
      fit-margin-right="1"
-     fit-margin-bottom="1"
+     fit-margin-bottom="0"
      fit-margin-left="1"
      inkscape:zoom="0.3172043"
-     inkscape:cx="504.52259"
-     inkscape:cy="162.94376"
+     inkscape:cx="-472.76555"
+     inkscape:cy="114.90051"
      inkscape:window-x="0"
      inkscape:window-y="25"
      inkscape:window-maximized="1"
@@ -228,7 +228,7 @@
      id="g10"
      inkscape:groupmode="layer"
      inkscape:label="perf-changes"
-     transform="matrix(1.25,0,0,-1.25,-27.832485,534.94376)"><path
+     transform="matrix(1.25,0,0,-1.25,-27.832485,499.51069)"><path
        d="m 51.12,195.96 739.8,0 0,203.16 -739.8,0 0,-203.16 z"
        style="fill:#ffffff;fill-opacity:1;fill-rule:evenodd;stroke:none"
        id="path12"
