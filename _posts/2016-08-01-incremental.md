@@ -10,16 +10,17 @@ I remember when, during the 1.0 anniversary presentation at the
 pretty happy with using Rust in production there. *The core
 team has been in touch with them regularly*, he said, *asking them, you know,
 what do you need? And their answer is always: faster compiles ...* To the
-learned Rust user it is no surprise that this solicited a knowing chuckle from
+seasoned Rust user it is no surprise that this solicited a knowing chuckle from
 the audience. Improving compile times has actually been a major development
 focus after Rust reached 1.0 -- although, up to this point, much of the work
 towards this goal has gone into laying [architectural foundations][mir] within
 the compiler and we are only slowly beginning to see actual results.
 
 One of the projects that is building on these foundations, and that should
-help **improve compile times** a lot for some specific but very common workflows,
-is **incremental compilation**. This new feature, once it is fully implemented,
-will allow you to iterate on your code much more quickly.
+help **improve compile times** a lot for typical workflows,
+is **incremental compilation**. Incremental compilation avoids redoing work
+when you recompile a crate, which will ultimately lead to a much faster
+edit-compile-debug cycle.
 
 Today we are announcing an **alpha version** of incremental compilation, which
 marks an important milestone in the development of the feature: For the first
@@ -32,9 +33,13 @@ rustc -Zincremental=<path> ./main.rs
 ```
 
 This will start the compiler in **incremental mode**, using whatever `<path>`
-you've provided as the incremental compilation cache directory.
+you've provided as the incremental compilation cache directory. We are also
+working on a [cargo subcommand to make this smoother](#tool), letting you just
+write `cargo incremental build`. Once things are working reliably, of course,
+incremental compilation will be available through the default
+`cargo build` command.
 
-With all that being said, incremental compilation is **not production-ready** yet:
+With that being said, incremental compilation is **not production-ready** yet:
 You might see crashes, you might see cases where there is no actual reduction
 in compile times and, most importantly, we still have to write extensive
 regression tests that make sure that incrementally compiled programs are
@@ -61,32 +66,28 @@ Much of a programmer's time is spent in an **edit-compile-debug** workflow:
 
 After that it's back to step one, making the next small change informed
 by the knowledge gained in the previous iteration.
-In order for this essential feedback loop, that is at the core of our daily
-work, to be smooth and effective, the time being stalled while waiting for the
-compiler to produce an executable program must be as short as possible, ideally
+This essential feedback loop is at the core of our daily work. We want the time
+being stalled while waiting for the compiler to produce an executable program
+to be as short as possible — ideally
 short enough as not to warrant a time-consuming and stress-inducing mental
 context switch: You want to be able to keep working, stay in the zone. After
 all, there is only so much [regressive fun][compiling] to be had while `rustc`
 bootstraps.
 
-Incremental compilation is a way of **exploiting** the **temporal coherence** a
-code base exhibits during the regular programming workflow: Many, if not most,
+Incremental compilation is a way of **exploiting** the fact that little changes
+between compiles during the regular programming workflow: Many, if not most,
 of the changes done in between two compilation sessions only have local impact
 on the machine code in the output binary, while the rest of the program,
 same as at the source level, will end up exactly the same, bit for bit.
 Incremental compilation aims at retaining as much of those unchanged
 parts as possible while redoing only that amount of work that actually *must*
-be redone. The next few paragraphs will give a little tour of the basic strategy
-we are pursuing in order to implement incremental compilation in the Rust compiler,
-of the kind of compile time speedups and runtime trade-offs that are to be
-expected, and finally, the kind of progress the actual implementation has made
-so far.
+be redone.
 
 
 How Do You Make Something "Incremental"?
 ========================================
 We have already heard that computing something incrementally means updating
-only those parts of the computation's output that need to be changed in
+only those parts of the computation's output that need to be adapted in
 response to a given change in the computation's inputs.
 One basic strategy we can employ to achieve this is to view one big computation
 (like compiling a program) as a **composite** of many smaller, interrelated
@@ -187,17 +188,21 @@ have to **re-compute** it because of some changed input.
 Dependency Graphs
 =================
 There is a formal method that can be used to model a computation's intermediate
-results and their "up-to-dateness" in a straightforward way, so-called
+results and their individual "up-to-dateness" in a straightforward way:
 **dependency graphs**. It looks like this: Each input and each **intermediate
 result** is represented as a **node** in a directed graph. The **edges** in the
 graph, on the other hand, represent which intermediate result or input can have
-an **influence** on some other intermediate result. More formally, let `v` be
+an **influence** on some other intermediate result.
+
+<!-- edited out
+More formally, let `v` be
 some intermediate result and `N(v)` be the dependency graph node representing
 `v` in the graph. Further, let `xᵢ` be the intermediate results and inputs
 that have to be **read** when computing `v` and let `N(xᵢ)`
 be their representing nodes. Then the dependency graph will contain the edges
 `N(v) → N(xᵢ)` for all `i`. In other words, each edge records a dependency
 of one intermediate result on another.
+ -->
 
 Let's go back to our algebra example to see what this looks like in
 practice:
@@ -213,7 +218,7 @@ practice:
 
 As you can see, we have nodes for the inputs `a`, `b`, and `c`, and nodes for
 the intermediate results `b×c` and `a+b×c`. The edges should come as no
-surprise: There is an edge from `b×c` to `b` and one to `c` because those are
+surprise: There is one edge from `b×c` to `b` and one to `c` because those are
 the values we need to read when computing `b×c`. For `a+b×c` it's
 exactly the same. Note, by the way, that the above graph is a tree just because
 the computation it models has the form of a tree. In general, dependency graphs
@@ -233,7 +238,7 @@ What makes this data structure really useful is that we can ask it questions
 of the form "if X has changed, is Y still up-to-date?". We just take the node
 representing `Y` and collect all the inputs `Y` depends on by transitively
 following all edges originating from `Y`. If any of those inputs has changed,
-any value we have cached for `Y` cannot be relied on any more.
+the value we have cached for `Y` cannot be relied on anymore.
 
 
 Dependency Tracking in the Compiler
@@ -324,7 +329,7 @@ Let's take a look at some of the implications of what we've learned so far:
 In other words, the effectiveness of incremental compilation is very sensitive
 to the structure of the program being compiled and the change being made.
 Changing a single character in the source code might very well invalidate the
-whole incremental compilation cache. Hopefully though, this kind of change is
+whole incremental compilation cache. Usually though, this kind of change is
 a rare case and most of the time only a small portion of the program has to be
 recompiled.
 
@@ -357,20 +362,19 @@ and codegen passes. Consequently, if this phase can be skipped at least for
 part of a code base, this is where the biggest impact on compile times can be
 achieved.
 
-With that in mind, we can also give an upper bound on how much time this
+With that in mind, we can also give an **upper bound** on how much time this
 initial version of incremental compilation can save: If the compiler spends X
 seconds optimizing when compiling your crate, then incremental compilation will
 reduce compile times at most by those X seconds.
 
 Another area that has a large influence on the actual effectiveness of the
-alpha version is dependency tracking granularity: It's up to us how fine-grained
+alpha version is **dependency tracking granularity**: It's up to us how fine-grained
 we make our dependency graphs, and the current implementation makes it rather
-coarse in places. For example, the dependency graph only knows a single node
-for all methods in an `impl`. As a consequence, the compiler will assume *all*
+coarse in places. For example, the dependency graph
+[only knows a single node for all methods in an `impl`][impl-granularity].
+As a consequence, the compiler will consider *all*
 methods of that `impl` as changed if just one of them is changed. This of course
-will mean that more code will be re-compiled than is strictly necessary. The
-current implementation is still a proof of concept more than anything else.
-
+will mean that more code will be re-compiled than is strictly necessary.
 
 Performance Numbers
 ===================
@@ -407,51 +411,60 @@ have on incremental rebuild times:
 
 ![Build Times After Specific Changes][performance-changes]{:class="center"}
 
-As you can see, the effectiveness of incremental compilation indeed depends a
+The numbers show that the effectiveness of incremental compilation indeed depends a
 lot on the type of change applied to the code. For changes with very local
 effect we can get close to optimal re-use (as in the case of `Error::cause()`,
 or `dfa::write_vari32()`). If we change something that has an impact on many
 places, like `Compiler::new()`, we might not see a noticeable reduction in
 compile times. But again, be aware that these measurements are from the
-current implementation of incremental compilation. They do not reflect the
+current state of the implementation. They do not reflect the
 full potential of the feature.
 
 
 Future Plans
 ============
-The alpha version represents minimal end-to-end implementation of incremental
-compilation for Rust compiler, so there is lots of room for improvement. The
-paragraph on the current status already laid out the two major axis along which
+The alpha version represents a minimal end-to-end implementation of incremental
+compilation for the Rust compiler, so there is lots of room for improvement. The
+section on the current status already laid out the two major axis along which
 we will pursue increased efficiency:
 
 - **Cache more** intermediate results, like MIR and type information, which will
   allow the compiler to skip more and more steps.
-- Make **dependency tracking more precise**, so that the compiler encounters fewer
-  false positives during cache invalidation.
 
-Improvements in both of these directions will make IC more effective as the
-implementation matures.
+- Make **dependency tracking more precise**, so that the compiler encounters
+  fewer false positives during cache invalidation.
+
+Improvements in both of these directions will make incremental compilation
+more effective as the implementation matures.
 
 In terms of correctness, we tried to err on the side of caution from the get-go,
 rather making the compiler recompute something if we were not sure if our
 dependency tracking did the right thing, but there is still more that can be
 done.
 
-- We could use many **more auto-tests** that make sure that various basic components
+- We want to have many **more auto-tests** that make sure that various basic components
   of the system **don't regress**. This is an area where interested people can
   start contributing with relative ease, since one only needs to understand the
   Rust language and the test framework, but not the more complicated innards of
-  the compiler's implementation. [TODO: add link to GH meta issue]
+  the compiler's implementation. If you are interested in jumping in, head on
+  over to the [tracking issue][regression-tracking] on GitHub and leave a
+  comment!
 
-- We have a neat little [tool][cargo-incremental] (implemented as a Cargo
+- <a name="tool"></a> We are working on the
+  [*cargo incremental*][cargo-incremental] tool (implemented as a Cargo
   subcommand for hassle-free installation and usage) that will walk a projects
   git history, compiling successive versions of the source code and
    **collecting data** on the **efficiency** and **correctness** of
   incremental versus regular compilation. If you're interested in helping out,
-  consider yourself invited t o download the tool and run it on a project of
-  yours!
+  consider yourself invited to either hack on the tool itself or downloading
+  and running it on a project of yours. The [#rustc channel on IRC][rustc-irc]
+  is currently the best place to get further information regarding this.
 
-> TODO: Conclusion. Where to go for information.
+Thanks to everyone in the community who has contributed directly or indirectly
+to incremental compilation so far! If you are interested in tackling a specific
+implementation problem, look for [issues tagged with A-incr-comp][incr-comp-tag]
+or ask around in the [#rustc channel on IRC][rustc-irc].
+
 
 [meetup]: https://air.mozilla.org/bay-area-rust-meetup-may-2016/
 [mir]: https://blog.rust-lang.org/2016/04/19/MIR.html
@@ -473,3 +486,7 @@ done.
 [futures]: https://github.com/alexcrichton/futures-rs
 [syntex]: https://github.com/serde-rs/syntex/tree/master/syntex_syntax
 [futures-all]: https://github.com/alexcrichton/futures-rs/blob/master/tests/all.rs
+[impl-granularity]: https://github.com/rust-lang/rust/issues/36349
+[regression-tracking]: https://github.com/rust-lang/rust/issues/36350
+[incr-comp-tag]: https://github.com/rust-lang/rust/issues?utf8=%E2%9C%93&q=is%3Aopen%20is%3Aissue%20label%3AA-incr-comp%20
+[rustc-irc]: https://www.rust-lang.org/community.html
